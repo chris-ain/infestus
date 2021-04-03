@@ -38,6 +38,7 @@ window.mat4 = glMatrix.mat4;
 window.quat = glMatrix.quat;
 window.quat2 = glMatrix.quat2;
 window.vec2 = glMatrix.vec2;
+
 window.vec3 = glMatrix.vec3;
 window.vec4 = glMatrix.vec4;
 
