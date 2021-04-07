@@ -1,5 +1,4 @@
-<script src="https://cdn.jsdelivr.net/npm/curtainsjs@7.3.2/dist/curtains.umd.min.js"></script>
-<script>
+
 
 window.addEventListener("load", () => {
     // we will keep track of all our planes in an array
@@ -260,4 +259,4 @@ window.addEventListener("load", () => {
     });
 });
 
-</script>
+
