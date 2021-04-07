@@ -118,7 +118,6 @@ window.addEventListener("load", () => {
         plane.setRenderTarget(rgbTarget);
     }
 
-
     const distortionFs = `
         precision mediump float;
     
