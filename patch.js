@@ -1,9 +1,14 @@
 
-
 window.addEventListener("load", () => {
+    function lerp (start, end, amt){
+        return (1 - amt) * start + amt * end *.5;
+    }
+    
     // we will keep track of all our planes in an array
     const planes = [];
     let scrollEffect = 0;
+    var planesDeformations = 0
+
 
     // get our planes elements
     const planeElements = document.getElementsByClassName("plane");
@@ -25,11 +30,14 @@ window.addEventListener("load", () => {
         pixelRatio: Math.min(1.5, window.devicePixelRatio) // limit pixel ratio for performance
     });
 
+
+
     curtains.onRender(() => {
         if(useNativeScroll) {
             // update our planes deformation
             // increase/decrease the effect
-            scrollEffect = curtains.lerp(scrollEffect, 0, 0.05);
+            planesDeformations = lerp(planesDeformations, 5, 0.075);
+            scrollEffect = lerp(scrollEffect, 5, 0.075);
         }
     }).onScroll(() => {
         // get scroll deltas to apply the effect on scroll
@@ -45,22 +53,14 @@ window.addEventListener("load", () => {
         else if(delta.y < -60) {
             delta.y = -60;
         }
-
-        if(useNativeScroll && Math.abs(delta.y) > Math.abs(scrollEffect)) {
-            scrollEffect = curtains.lerp(scrollEffect, delta.y, 0.5);
+        if(Math.abs(delta.y) > Math.abs(planesDeformations)) {
+            planesDeformations = lerp(planesDeformations, delta.y, 0.5);
         }
-        else {
-            scrollEffect = curtains.lerp(scrollEffect, delta.y * 1.5, 0.5);
+      
+        if(Math.abs(delta.y) > Math.abs(scrollEffect)) {
+            scrollEffect = lerp(scrollEffect, delta.y, 0.5);
         }
 
-        // manually update planes positions
-        for(let i = 0; i < planes.length; i++) {
-            // apply additional translation, scale and rotation
-            applyPlanesParallax(i);
-
-            // update the plane deformation uniform as well
-            planes[i].uniforms.scrollEffect.value = scrollEffect;
-        }
     }).onError(() => {
         // we will add a class to the document body to display original images
         document.body.classList.add("no-curtains", "planes-loaded");
@@ -92,51 +92,72 @@ window.addEventListener("load", () => {
     let planeDrawn = planeElements.length;
 
     const vs = `
-        precision mediump float;
-        // default mandatory variables
-        attribute vec3 aVertexPosition;
-        attribute vec2 aTextureCoord;
-        uniform mat4 uMVMatrix;
-        uniform mat4 uPMatrix;
-        uniform mat4 planeTextureMatrix;
-        // custom variables
-        varying vec3 vVertexPosition;
-        varying vec2 vTextureCoord;
-        uniform float uScrollEffect;
-        void main() {
-            vec3 vertexPosition = aVertexPosition;
-            // cool effect on scroll
-            vertexPosition.x += sin((vertexPosition.y / 1.5 + 1.0) * 3.141592) * (sin(uScrollEffect / 2000.0));
-            gl_Position = uPMatrix * uMVMatrix * vec4(vertexPosition, 1.0);
-            // varyings
-            vVertexPosition = vertexPosition;
-            vTextureCoord = (planeTextureMatrix * vec4(aTextureCoord, 0.0, 1.0)).xy;
-        }
-    `;
+    precision mediump float;
+    
+    // default mandatory variables
+    attribute vec3 aVertexPosition;
+    attribute vec2 aTextureCoord;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+
+    uniform mat4 planeTextureMatrix;
+
+    // custom variables
+    varying vec3 vVertexPosition;
+    varying vec2 vTextureCoord;
+
+    uniform float uPlaneDeformation;
+
+    void main() {
+        vec3 vertexPosition = aVertexPosition;
+
+        // cool effect on scroll
+        vertexPosition.y += sin(((vertexPosition.x + 1.0) / 2.0) * 3.141592) * (sin(uPlaneDeformation / 250.0));
+
+        gl_Position = uPMatrix * uMVMatrix * vec4(vertexPosition, 1.0);
+
+        // varyings
+        vVertexPosition = vertexPosition;
+        vTextureCoord = (planeTextureMatrix * vec4(aTextureCoord, 0.0, 1.0)).xy;
+    }
+`;
+
 
     const fs = `
-        precision mediump float;
-        varying vec3 vVertexPosition;
-        varying vec2 vTextureCoord;
-        uniform sampler2D planeTexture;
-        void main( void ) {
-            // just display our texture
-            gl_FragColor = texture2D(planeTexture, vTextureCoord);
-        }
-    `;
+    precision mediump float;
+    
+    varying vec3 vVertexPosition;
+    varying vec2 vTextureCoord;
+
+    uniform sampler2D planeTexture;
+
+    void main() {
+        // just display our texture
+        gl_FragColor = texture2D(planeTexture, vTextureCoord);
+    }
+`;
+
 
     const params = {
         vertexShader: vs,
         fragmentShader: fs,
+        shareProgram: true, // share planes program to improve plane creation speed
         widthSegments: 10,
         heightSegments: 10,
+        drawCheckMargins: {
+            top: 100,
+            right: 0,
+            bottom: 100,
+            left: 0,
+        },
         uniforms: {
-            scrollEffect: {
-                name: "uScrollEffect",
+            planeDeformation: {
+                name: "uPlaneDeformation",
                 type: "1f",
                 value: 0,
             },
-        },
+        }
     };
 
     // add our planes and handle them
@@ -149,67 +170,82 @@ window.addEventListener("load", () => {
     }
 
 
+
+
+
+
     // handle all the planes
     function handlePlanes(index) {
         const plane = planes[index];
 
-        // check if our plane is defined and use it
-        plane.onReady(() => {
-            // apply parallax on load
-            applyPlanesParallax(index);
 
-            // once everything is ready, display everything
-            if(index === planes.length - 1) {
-                document.body.classList.add("planes-loaded");
-            }
-        }).onAfterResize(() => {
-            // apply new parallax values after resize
-            applyPlanesParallax(index);
-        }).onRender(() => {
-            // new way: we just have to change the rotation and scale properties directly!
-            // apply the rotation
-            plane.rotation.z = Math.abs(scrollEffect) / 750;
 
-            // scale plane and its texture
-            plane.scale.y = 1 + Math.abs(scrollEffect) / 300;
-            plane.textures[0].scale.y = 1 + Math.abs(scrollEffect) / 150;
+// check if our plane is defined and use it
+plane && plane.onLoading(function () {
+    //console.log(plane.loadingManager.sourcesLoaded);
+  }).onReady(function () {
+    plane.setRenderTarget(rgbTarget);
 
-            /*
-            // old way: using setRotation and setScale
-            plane.setRotation(new Vec3(0, 0, scrollEffect / 750));
-            plane.setScale(new Vec2(1, 1 + Math.abs(scrollEffect) / 300));
-            plane.textures[0].setScale(new Vec2(1, 1 + Math.abs(scrollEffect) / 150));
-            */
-        }).onReEnterView(() => {
-            // plane is drawn again
-            planeDrawn++;
-            // update our number of planes drawn debug value
-            debugElement.innerText = planeDrawn;
-        }).onLeaveView(() => {
-            // plane is not drawn anymore
-            planeDrawn--;
-            // update our number of planes drawn debug value
-            debugElement.innerText = planeDrawn;
-        });
+    // once everything is ready, display everything
+    if (index === planes.length - 1) {
+      document.body.classList.add("planes-loaded");
     }
+  }).onRender(function () {
+    // update the uniform
+    plane.uniforms.planeDeformation.value = planesDeformations;
 
-    function applyPlanesParallax(index) {
-        // calculate the parallax effect
+    //plane.setScale(1, 1 + Math.abs(scrollEffect) / 500);
+    plane.textures[0].setScale(1 + Math.abs(scrollEffect) / 500);
+  });
+}
 
-        // get our window size
-        const sceneBoundingRect = curtains.getBoundingRect();
-        // get our plane center coordinate
-        const planeBoundingRect = planes[index].getBoundingRect();
-        const planeOffsetTop = planeBoundingRect.top + planeBoundingRect.height / 2;
-        // get a float value based on window height (0 means the plane is centered)
-        const parallaxEffect = (planeOffsetTop - sceneBoundingRect.height / 2) / sceneBoundingRect.height;
+    var rgbFs = `
+    precision mediump float;
 
-        // apply the parallax effect
-        planes[index].relativeTranslation.y = parallaxEffect * sceneBoundingRect.height / 4;
+    varying vec3 vVertexPosition;
+    varying vec2 vTextureCoord;
 
-        /*
-        // old way using setRelativeTranslation
-        planes[index].setRelativeTranslation(new Vec3(0, parallaxEffect * (sceneBoundingRect.height / 4)));
-         */
+    uniform sampler2D uRenderTexture;
+
+    uniform float uScrollEffect;
+
+    void main() {
+        vec2 textureCoords = vTextureCoord;
+
+        vec2 redTextCoords = vec2(vTextureCoord.x, vTextureCoord.y - uScrollEffect / 500.0);
+        vec2 greenTextCoords = vec2(vTextureCoord.x, vTextureCoord.y - uScrollEffect / 1000.0);
+        vec2 blueTextCoords = vec2(vTextureCoord.x, vTextureCoord.y - uScrollEffect / 1500.0);
+
+        vec4 red = texture2D(uRenderTexture, redTextCoords);
+        vec4 green = texture2D(uRenderTexture, greenTextCoords);
+        vec4 blue = texture2D(uRenderTexture, blueTextCoords);
+
+        vec4 finalColor = vec4(red.r, green.g, blue.b, min(1.0, red.a + blue.a + green.a));
+        gl_FragColor = finalColor;
     }
+`;
+
+ var rgbTarget = curtains.addRenderTarget();
+
+
+var rgbPass = curtains.addShaderPass({
+    fragmentShader: rgbFs,
+    renderTarget: rgbTarget,
+    depthTest: false, // we need to disable the depth test to display that shader pass on top of the first one
+    uniforms: {
+        scrollEffect: {
+            name: "uScrollEffect",
+            type: "1f",
+            value: 0,
+        },
+    },
 });
+
+if(rgbPass) {
+    rgbPass.onRender(function() {
+        // update the uniform
+        rgbPass.uniforms.scrollEffect.value = scrollEffect;
+    });
+}
+});
+   
